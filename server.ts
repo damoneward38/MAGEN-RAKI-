@@ -42,9 +42,26 @@ const six686Boot = secureBoot();
 console.log("🛡️ SIX 686 Governor Initialized:", six686Boot.status, "| Hash:", six686Boot.integrityHash?.slice(0, 16));
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT || 3000);
 
 app.use(express.json({ limit: "5mb" }));
+
+// Server-owned, expiring sessions. No browser-provided role or cached identity is trusted.
+const activeSessions = new Map<string, { user: any; expiresAt: number }>();
+const SESSION_TTL_MS = 8 * 60 * 60 * 1000;
+
+app.use("/api", (req, res, next) => {
+  if (req.path === "/health" || req.path === "/contact" || req.path.startsWith("/auth/")) return next();
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const session = token ? activeSessions.get(token) : undefined;
+  if (!session || session.expiresAt <= Date.now()) {
+    if (token) activeSessions.delete(token);
+    return res.status(401).json({ error: "Authentication required" });
+  }
+  (req as any).authUser = session.user;
+  return next();
+});
 
 // Mount Magen-Raki and Neural Core drop-in routers
 app.use("/api/magen-raki", magenRakiRouter);
@@ -406,83 +423,69 @@ app.post("/api/six686/action/execute-guard", async (req, res) => {
 });
 
 // Authentication & Admin Identity Endpoints
-const activeSessions = new Map<string, any>();
-
-// Seed default root session for damoneward38@gmail.com
 const rootAdminUser = {
   id: "usr_damoneward38",
-  email: "damoneward38@gmail.com",
-  name: "Damon Ward",
+  email: (process.env.MAGEN_ADMIN_EMAIL || "damoneward38@gmail.com").trim().toLowerCase(),
+  name: "Damone Ward",
   role: "SUPERADMIN",
   title: "Root Security Officer & HSM Administrator",
   tenantId: "six686-root",
-  avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100&auto=format&fit=crop&q=80",
   permissions: ["*", "admin", "override", "killswitch", "governance-signoff", "enclave-attestation", "compliance-audit"],
   maxRiskAuthority: "CRITICAL",
-  mfaAuthenticated: true,
+  mfaAuthenticated: false,
   hsmSessionActive: true,
   createdAt: new Date().toISOString(),
 };
 
+function verifyAdminPassword(password: unknown): boolean {
+  const encoded = process.env.MAGEN_ADMIN_PASSWORD_HASH || "";
+  if (typeof password !== "string" || !password || !encoded.startsWith("scrypt$")) return false;
+  const parts = encoded.split("$");
+  if (parts.length !== 3 || !parts[1] || !/^[a-f0-9]{128}$/i.test(parts[2])) return false;
+  try {
+    const actual = crypto.scryptSync(password, parts[1], 64);
+    const expected = Buffer.from(parts[2], "hex");
+    return expected.length === actual.length && crypto.timingSafeEqual(actual, expected);
+  } catch { return false; }
+}
+
 app.get("/api/auth/session", (req, res) => {
-  const token = req.headers.authorization?.replace("Bearer ", "") || req.query.token as string;
-  if (token && activeSessions.has(token)) {
-    return res.json({ authenticated: true, user: activeSessions.get(token), token });
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : "";
+  const session = token ? activeSessions.get(token) : undefined;
+  if (!session || session.expiresAt <= Date.now()) {
+    if (token) activeSessions.delete(token);
+    return res.status(401).json({ authenticated: false, user: null });
   }
-  // Default to root admin if no specific session token is provided
-  res.json({
-    authenticated: true,
-    user: rootAdminUser,
-    token: "magen_sec_session_root_damoneward38",
-  });
+  return res.json({ authenticated: true, user: session.user });
 });
 
 app.post("/api/auth/login", (req, res) => {
-  const { email, password, role } = req.body;
-  if (!email) {
-    return res.status(400).json({ success: false, error: "Email is required" });
+  const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+  const configuredEmail = (process.env.MAGEN_ADMIN_EMAIL || "damoneward38@gmail.com").trim().toLowerCase();
+  if (!process.env.MAGEN_ADMIN_PASSWORD_HASH || !process.env.MAGEN_ADMIN_PASSWORD_HASH.startsWith("scrypt$")) {
+    return res.status(503).json({ success: false, error: "Secure administrator credentials are not configured" });
   }
-
-  const normalizedEmail = String(email).trim().toLowerCase();
-  const isAdmin = normalizedEmail === "damoneward38@gmail.com";
-
-  const user = {
-    id: `usr_${Buffer.from(normalizedEmail).toString("hex").slice(0, 10)}`,
-    email: normalizedEmail,
-    name: isAdmin ? "Damon Ward" : normalizedEmail.split("@")[0],
-    role: isAdmin ? "SUPERADMIN" : (role || "SECURITY_ANALYST"),
-    title: isAdmin ? "Root Security Officer & HSM Administrator" : "Security Operations Analyst",
-    tenantId: isAdmin ? "six686-root" : "tenant-alpha",
-    permissions: isAdmin 
-      ? ["*", "admin", "override", "killswitch", "governance-signoff", "enclave-attestation", "compliance-audit"]
-      : ["read:telemetry", "execute:inference", "view:audit"],
-    maxRiskAuthority: isAdmin ? "CRITICAL" : "MEDIUM",
-    mfaAuthenticated: true,
-    hsmSessionActive: isAdmin,
-    createdAt: new Date().toISOString(),
-  };
-
-  const sessionToken = `magen_session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
-  activeSessions.set(sessionToken, user);
-
-  res.json({
-    success: true,
-    token: sessionToken,
-    user,
-  });
+  if (!email || email !== configuredEmail || !verifyAdminPassword(req.body?.password)) {
+    return res.status(401).json({ success: false, error: "Invalid email or password" });
+  }
+  const token = crypto.randomBytes(32).toString("hex");
+  const user = { ...rootAdminUser, mfaAuthenticated: false };
+  activeSessions.set(token, { user, expiresAt: Date.now() + SESSION_TTL_MS });
+  return res.json({ success: true, token, user, expiresAt: new Date(Date.now() + SESSION_TTL_MS).toISOString() });
 });
 
 app.post("/api/auth/logout", (req, res) => {
-  const token = req.headers.authorization?.replace("Bearer ", "") || req.body?.token;
-  if (token) {
-    activeSessions.delete(token);
-  }
-  res.json({ success: true, message: "Session terminated securely" });
+  const header = req.headers.authorization || "";
+  const token = header.startsWith("Bearer ") ? header.slice(7) : (typeof req.body?.token === "string" ? req.body.token : "");
+  if (token) activeSessions.delete(token);
+  return res.json({ success: true });
 });
 
-// Admin identity profile endpoint
 app.get("/api/admin/current", (req, res) => {
-  res.json(rootAdminUser);
+  const user = (req as any).authUser;
+  if (user?.role !== "SUPERADMIN") return res.status(403).json({ error: "Administrator access required" });
+  return res.json(user);
 });
 
 // 6. Approval Gate Management

@@ -30,12 +30,14 @@ export const ContactPage: React.FC<ContactPageProps> = ({ setActiveTab }) => {
     ticketId: string;
     message: string;
   } | null>(null);
+  const [submitError, setSubmitError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !email.trim()) return;
 
     setIsSubmitting(true);
+    setSubmitError(null);
     try {
       const res = await fetch('/api/contact', {
         method: 'POST',
@@ -51,16 +53,14 @@ export const ContactPage: React.FC<ContactPageProps> = ({ setActiveTab }) => {
 
       if (!res.ok) throw new Error('Failed to submit demo request');
       const data = await res.json();
+      if (!data.ticketId) throw new Error('The server did not return a dispatch ticket.');
       setSubmissionResult({
-        ticketId: data.ticketId || `MAGEN-${Math.floor(100000 + Math.random() * 900000)}`,
+        ticketId: data.ticketId,
         message: data.message || 'Consultation request received.',
       });
-    } catch (err) {
-      // Fallback
-      setSubmissionResult({
-        ticketId: `MAGEN-${Math.floor(100000 + Math.random() * 900000)}`,
-        message: 'Sky-Shield deployment consultation request registered successfully.',
-      });
+    } catch (err: any) {
+      setSubmissionResult(null);
+      setSubmitError(err?.message || 'The consultation service is unavailable. Your request was not registered.');
     } finally {
       setIsSubmitting(false);
     }
@@ -281,6 +281,12 @@ export const ContactPage: React.FC<ContactPageProps> = ({ setActiveTab }) => {
                   className="w-full px-3.5 py-2.5 rounded-xl bg-black/70 border border-white/10 text-xs text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-500 leading-relaxed"
                 />
               </div>
+
+              {submitError && (
+                <div className="mb-3 p-3 rounded-xl bg-rose-950/60 border border-rose-800/60 text-rose-200 text-xs leading-relaxed">
+                  {submitError}
+                </div>
+              )}
 
               {/* Submit Button */}
               <button

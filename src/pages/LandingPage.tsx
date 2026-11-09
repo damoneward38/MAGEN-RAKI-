@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Shield,
   Cpu,
@@ -24,7 +24,7 @@ interface LandingPageProps {
 }
 
 export const LandingPage: React.FC<LandingPageProps> = ({ setActiveTab }) => {
-  // Live threat interception feed simulator
+  // Illustrative threat examples for the marketing page — not live telemetry.
   const [threatEvents, setThreatEvents] = useState([
     {
       id: 1,
@@ -60,14 +60,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setActiveTab }) => {
     },
   ]);
 
-  const [threatCount, setThreatCount] = useState(849312);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setThreatCount((prev) => prev + Math.floor(Math.random() * 3) + 1);
-    }, 2500);
-    return () => clearInterval(interval);
-  }, []);
+  const threatCount = 849312;
 
   return (
     <div className="relative min-h-screen bg-[#0a0a14] bg-immersive overflow-hidden text-slate-200">
@@ -208,7 +201,7 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setActiveTab }) => {
           <div className="p-3 border-r border-white/10 last:border-0">
             <div className="flex items-center gap-1.5 text-xs text-slate-400 mb-1">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span>Injections Blocked</span>
+              <span>Example Blocks (demo)</span>
             </div>
             <div className="text-xl font-black font-mono text-emerald-400">
               {threatCount.toLocaleString()}
@@ -326,13 +319,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ setActiveTab }) => {
           <div className="lg:col-span-5 space-y-4">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-md bg-indigo-950/80 text-indigo-300 text-xs font-mono border border-indigo-500/30">
               <Radio className="w-3.5 h-3.5 text-emerald-400 animate-pulse" />
-              <span>LIVE DEFENSE TELEMETRY</span>
+              <span>ILLUSTRATIVE EXAMPLES</span>
             </div>
             <h2 className="text-3xl sm:text-4xl font-extrabold text-white tracking-tight">
-              Real-Time Threat Interception Stream
+              Example Threat Interception Scenarios
             </h2>
             <p className="text-slate-400 text-sm leading-relaxed">
-              Watch as Magen-Raki's Neural Core Engine (Nero-4.0) isolates inbound adversarial injections, credential theft probes, and model inversion attempts before they reach target LLMs.
+              Illustrative scenarios showing how Magen-Raki's Neural Core Engine (Nero-4.0) is designed to isolate inbound adversarial injections, credential theft probes, and model inversion attempts before they reach target LLMs. These examples are not live production telemetry.
             </p>
             <div className="pt-2">
               <button

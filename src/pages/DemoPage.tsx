@@ -29,6 +29,7 @@ export const DemoPage: React.FC = () => {
   const [result, setResult] = useState<InferenceAnalysisResult | null>(null);
   const [history, setHistory] = useState<InferenceAnalysisResult[]>([]);
   const [copiedHash, setCopiedHash] = useState<boolean>(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const attackPresets = [
     {
@@ -58,6 +59,7 @@ export const DemoPage: React.FC = () => {
     if (!activePrompt.trim()) return;
 
     setIsLoading(true);
+    setAnalysisError(null);
     try {
       const response = await fetch('/api/nero/analyze', {
         method: 'POST',
@@ -78,37 +80,8 @@ export const DemoPage: React.FC = () => {
       setHistory((prev) => [data, ...prev.slice(0, 9)]);
     } catch (err: any) {
       console.error(err);
-      // Fallback deterministic mock for resilient UI
-      const mockResult: InferenceAnalysisResult = {
-        success: true,
-        engine: 'Neural Core Engine (Nero-4.0)',
-        chip: 'Six 686 Hardware Security Module',
-        promptHash: '7f91a24e...9102b',
-        nonce: '8dfa190b',
-        targetModel: selectedModel,
-        securityLevel,
-        latencyMs: 2.1,
-        riskScore: activePrompt.toLowerCase().includes('ignore') ? 92 : 6,
-        status: activePrompt.toLowerCase().includes('ignore') ? 'BLOCKED_BY_SIX686_ENCLAVE' : 'VERIFIED_SECURE',
-        action: activePrompt.toLowerCase().includes('ignore') ? 'HARD_BLOCK' : 'DIRECT_PASS',
-        attackCategory: activePrompt.toLowerCase().includes('ignore') ? 'Prompt Injection / Directive Override' : 'Benign Query',
-        reasoning: activePrompt.toLowerCase().includes('ignore')
-          ? 'Nero-4.0 syntactic armor detected direct instruction manipulation sequence.'
-          : 'Inference verified clean across all Six 686 hardware gates.',
-        detectedSignatures: activePrompt.toLowerCase().includes('ignore')
-          ? ['Signature Match: "ignore all previous rules"']
-          : ['Zero malicious token signatures identified in Six 686 hardware lookup'],
-        hardwareIsolation: {
-          enclaveAddress: '0x7F91_ENCLAVE_ZERO',
-          sideChannelDampening: 'ACTIVE',
-          memorySanitized: true,
-          chipAttestationHash: '4b891a29f4001c9981e19488a0912194',
-          immutableLedgerBlock: 4192089,
-        },
-        timestamp: new Date().toISOString(),
-      };
-      setResult(mockResult);
-      setHistory((prev) => [mockResult, ...prev.slice(0, 9)]);
+      setResult(null);
+      setAnalysisError(err?.message || 'The Nero-4.0 analysis service is unavailable. No fallback result was generated.');
     } finally {
       setIsLoading(false);
     }
@@ -268,6 +241,15 @@ export const DemoPage: React.FC = () => {
 
         {/* Right Column: Real-Time Nero-4.0 Evaluation Telemetry (6 cols) */}
         <div className="lg:col-span-6 space-y-6">
+          {analysisError && (
+            <div className="p-4 rounded-xl bg-rose-950/60 border border-rose-800/60 text-rose-200 text-xs leading-relaxed">
+              <div className="flex items-center gap-2 font-bold mb-1">
+                <AlertTriangle className="w-4 h-4" />
+                Analysis unavailable
+              </div>
+              {analysisError}
+            </div>
+          )}
           {result ? (
             <div className="p-6 rounded-2xl bg-black/60 border border-white/10 shadow-2xl backdrop-blur-xl space-y-6">
               {/* Top Engine Badge with explicit Neural Core Icon requirement */}

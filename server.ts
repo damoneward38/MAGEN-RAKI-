@@ -3,6 +3,7 @@ import path from "path";
 import { createServer as createViteServer } from "vite";
 import { GoogleGenAI } from "@google/genai";
 import crypto from "crypto";
+import fs from "fs/promises";
 
 import {
   secureBoot,
@@ -246,28 +247,60 @@ Prompt: """${prompt.slice(0, 1500)}"""`,
       sideChannelDampening: "ACTIVE",
       memorySanitized: true,
       chipAttestationHash: tamperLedgerSignature.slice(0, 32),
-      immutableLedgerBlock: 4192100 + Math.floor(Math.random() * 100),
+      immutableLedgerBlock: 4192100 + Math.floor(process.uptime()),
     },
     timestamp: new Date().toISOString(),
   });
 });
 
 // Contact / Demo Request endpoint
-app.post("/api/contact", (req, res) => {
+const CONTACT_DATA_DIR = process.env.MAGEN_DATA_DIR || path.join(process.cwd(), "data");
+const CONTACT_FILE = path.join(CONTACT_DATA_DIR, "contact-requests.json");
+
+async function persistContactRequest(record: Record<string, unknown>): Promise<void> {
+  await fs.mkdir(CONTACT_DATA_DIR, { recursive: true });
+  let requests: unknown[] = [];
+  try {
+    const existing = await fs.readFile(CONTACT_FILE, "utf8");
+    const parsed = JSON.parse(existing);
+    if (Array.isArray(parsed)) requests = parsed;
+  } catch (error: any) {
+    if (error?.code !== "ENOENT") throw error;
+  }
+  requests.push(record);
+  await fs.writeFile(CONTACT_FILE, JSON.stringify(requests, null, 2), "utf8");
+}
+
+app.post("/api/contact", async (req, res) => {
   const { name, email, company, deploymentType = "cloud", message } = req.body;
 
   if (!name || !email) {
     return res.status(400).json({ error: "Name and email are required." });
   }
 
-  const ticketId = `MAGEN-${Math.floor(100000 + Math.random() * 900000)}`;
+  const ticketId = `MAGEN-${crypto.randomUUID().slice(0, 8).toUpperCase()}`;
+  const record = {
+    ticketId,
+    name,
+    email,
+    company: company || null,
+    deploymentType,
+    message: message || null,
+    receivedAt: new Date().toISOString(),
+  };
+
+  try {
+    await persistContactRequest(record);
+  } catch (error: any) {
+    return res.status(503).json({ error: "Contact request storage is unavailable.", detail: error.message });
+  }
 
   res.json({
     success: true,
     ticketId,
     message: "Sky-Shield deployment consultation request registered successfully.",
     assignedSecurityArchitect: "Nero Enterprise Core Dispatch",
-    confirmationTimestamp: new Date().toISOString(),
+    confirmationTimestamp: record.receivedAt,
   });
 });
 
